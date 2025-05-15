@@ -89,7 +89,8 @@ class ConditionalDistribution(defaultdict[object, Distribution]):
 class NGram(ConditionalDistribution):
     # Counter allows __add__
 
-    def __init__(self, n:int, null=NULL): #, func_prior:Callable=id, func_posterior:Callable=id, func:Callable=None):
+    def __init__(self, n:int, null=NULL): 
+        #, func_prior:Callable=id, func_posterior:Callable=id, func:Callable=None):
         self.n = n
         self.null = null
         # if func is not None:
@@ -111,7 +112,7 @@ class NGram(ConditionalDistribution):
         posterior = sequence + tail
         return zip(windowed(prior, self.n-1), posterior)
 
-    def feed(self, sequence:Sequence):
+    def feed(self, sequence:Sequence): # provide some text to train the model
         if self.n == 1:
             pass
         for k1, k2 in self.__sliding_window(sequence):
@@ -119,7 +120,7 @@ class NGram(ConditionalDistribution):
             self[k1][k2] += 1
         return self
     
-    def flat(self):
+    def flat(self): # flatten the nested dicts in one single dict (used for saving)
         ret = {}
         for prior, dist in self.items():
             for posterior, count in dist.items():
@@ -127,9 +128,6 @@ class NGram(ConditionalDistribution):
         return ret
     
     def save(self, filename):
-        '''
-        Save the model
-        '''
         with open(filename, 'w', encoding='utf-8') as f:
             for (prior, posterior), count in sorted(self.flat().items()):
                 print(*prior, posterior, count, file=f)
@@ -172,16 +170,17 @@ class MetaNGram(list[NGram]):
     def __len__(self):
         return super().__len__()
 
-    def generate(self, size):
+    def generate(self, prompt=(), size=None):
         max_prior = len(self.ngrams)
-        INIT = tuple([NULL]*max_prior) 
-        prior = INIT
+        INIT = tuple([NULL]*max_prior)
+        prior = INIT + tuple(prompt)
+        prior = prior[len(prior)-max_prior:]
         words = []
         for _ in range(size):
             for ngram in reversed(self.ngrams):
                 prior_size = ngram.n - 1
                 distrib = ngram[prior[max_prior-prior_size:]]
-                if distrib.total() > random.randint(1, 3):
+                if distrib.total() > random.randint(1, 1):
                     break
             word = distrib.randomChoice()
             if word == NULL:
@@ -189,7 +188,7 @@ class MetaNGram(list[NGram]):
             else:
                 prior = prior[1:] + (word,)
             words.append(word)
-            print((word if word!='\n' else repr(word)).ljust(16), ngram.n, distrib.total())
+            #print((word if word!='\n' else repr(word)).ljust(16), ngram.n, distrib.total())
         print(*words)
 
     def feed(self, sequence: Sequence):
@@ -213,14 +212,20 @@ if __name__ == '__main__':
     import glob
     data_fn = rf'C:\Users\Usuari\Desktop\MIRI\Q2\IQL\IQL-lab1\europarl\data-v7\raw\europarl-v7.ca-en.ca'
 
-    model = MetaNGram(n=5)
-    for fn in glob.glob(rf"C:\Users\Usuari\Desktop\Documents\prolliure\hamilton\lletres\*"):
-        with open(fn, 'r', encoding='utf-8') as f:
-            model.feed(f.read().split())
-            model.save("{}.{}.{}-gram.model".format('hamilton', 'ca', '{n}'))
+    # model = MetaNGram(n=5)
+    # for fn in glob.glob(rf"C:\Users\Usuari\Desktop\Documents\prolliure\hamilton\lletres\*"):
+    # with open(data_fn, 'r', encoding='utf-8') as f:
+    #     for line in tqdm(f.readlines()[:200_000], 'train'):
+    #         model.feed(line.split())
+    #     model.save("data/europarl.ca.{n}-gram.model")
 
-    model = MetaNGram(n=5)
-    model.load("hamilton.ca.{n}-gram.model")
+    model = MetaNGram(n=4)
+    model.load("data/hamilton.en.{n}-gram.model")
+    while True:
+        prompt = input('Prompt: ')
+        prompt = prompt.split()
+        model.generate(prompt, 30)
+
     model.generate(100)
 
 
