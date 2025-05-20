@@ -63,20 +63,21 @@ def windowed(sequence, n):
     else:
         return [() for _ in sequence]
 
-__TIMES = defaultdict(float)
+__TIMES = defaultdict(lambda: (0, 0))
 
 @contextmanager
-def timer(name, print_now=False):
+def timer(name, print_now=True):
     start_time = time.process_time()  # Record start time
     try:
         yield
     finally:
         end_time = time.process_time()  # Record end time
         elapsed_time = end_time - start_time
-        __TIMES[name] += elapsed_time
+        __TIMES[name][0] += 1
+        __TIMES[name][1] += elapsed_time
         if print_now:
             print(f"[{name}] Elapsed time: {elapsed_time:.6f} seconds")
 
 def print_times():
-    for name, elapsed_time in __TIMES.items():
-        print(f"[{name}] Elapsed time: {elapsed_time:.6f} seconds")
+    for name, (count, time) in __TIMES.items():
+        print(f"[{name}] {count} it | {time:.6f} s/it | {time:.6f} s")
