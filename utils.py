@@ -81,3 +81,15 @@ def timer(name, print_now=True):
 def print_times():
     for name, (count, time) in __TIMES.items():
         print(f"[{name}] {count} it | {time:.6f} s/it | {time:.6f} s")
+
+
+def hash(key:tuple[str]):
+    return sum(map(ord, ' '.join(key)))
+
+
+def flatten(dict:dict[object,dict]): # flatten the nested dicts in one single dict (used for saving)
+    ret = {}
+    for prior, dist in dict.items():
+        for posterior, count in dist.items():
+            ret[prior, posterior] = count
+    return ret

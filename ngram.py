@@ -1,15 +1,19 @@
 import math
 from typing import Sequence
 import numpy as np
-from utils import windowed
+from utils import windowed, flatten
 import random
 from tqdm import tqdm
 import re
 import os
 from distribution import Distribution, ConditionalDistribution
+from utils import hash
+import sys
+import gzip
 
-NULL = '---'
-LINES_PER_MODEL_FILE = 10_000
+NULL = r'\0'
+NEWLINE = r'\n'
+LINES_PER_MODEL_FILE = 100_000
 
 class NGram(ConditionalDistribution):
     # Counter allows __add__
@@ -40,17 +44,6 @@ class NGram(ConditionalDistribution):
             self[k1][k2] += 1
         return self
     
-    def flatten_filter(self, filter): # flatten the nested dicts in one single dict (used for saving)
-        ret = {}
-        for prior, dist in self.items():
-            if filter(prior):
-                for posterior, count in dist.items():
-                    ret[prior, posterior] = count
-        return ret
-    
-    def flatten(self):
-        return self.flatten_filter(lambda _: True)
-    
     def __filename(self):
         return f'{self.path}.model'
     
@@ -68,18 +61,21 @@ class NGram(ConditionalDistribution):
                 print(*prior, posterior, count, file=f)
 
     # Save by parts
-    def save(self):
-        flat = self.flatten()
-        num_lines = len(flat)
+    def save(self, min_occurrences=1):
+        dict = {k:v for k,v in self.items() if v.total() > min_occurrences}
+        flat_dict = flatten(self)
+        num_lines = len(flat_dict)
         if self.n == 1 or num_lines < 2*LINES_PER_MODEL_FILE:
-            self.__save(flat, self.__filename())
+            self.__save(flat_dict, self.__filename())
         else:
             self.__num_files = num_lines // LINES_PER_MODEL_FILE
             with open(self.__filename_info(), 'w') as f:
                 f.write(str(self.__num_files))
             for i in tqdm(range(self.__num_files), f'Saving {self.n}-gram', leave=False):
+                if hash(('\\0', '\\0'))%self.__num_files == i:
+                    pass
                 self.__save(
-                    self.flatten_filter(lambda k: hash(k)%self.__num_files == i), 
+                    flatten({k:v for k,v in self.items() if hash(k)%self.__num_files == i}), 
                     filename=self.__filename_part(i)
                 )
 
@@ -97,7 +93,7 @@ class NGram(ConditionalDistribution):
                     assert os.path.exists(self.__filename_part(i))
             self.loaded = np.zeros(self.__num_files)
         else:
-            ValueError(f'Model not found. At least one of these files should exist: {path} {path_info}')
+            raise ValueError(f'Model not found. At least one of these files should exist: {path} {path_info}')
 
 
     # Load part
@@ -116,14 +112,14 @@ class NGram(ConditionalDistribution):
                 else:
                     self[tuple(prior)][posterior] += count
 
-    def __getitem__(self, key):
+    def getProbDistrib(self, key):
         assert isinstance(key, tuple)
         if self.__load_mode:
             h = hash(key) % self.__num_files
             if not self.loaded[h]:
                 self.loaded[h] = True
                 self.__load(self.__filename_part(h))
-        return super().__getitem__(key)
+        return self[key]
 
     
 class Model:  #MetaNGram
@@ -131,6 +127,7 @@ class Model:  #MetaNGram
 
     def __init__(self, n, name):
         self.ngrams = []
+        self.name = name
         for i in range(1, n+1):
             self.ngrams.append(NGram(i, f'model/{name}/{i}-gram'))
 
@@ -143,31 +140,32 @@ class Model:  #MetaNGram
     def __len__(self):
         return super().__len__()
 
-    def generate(self, prompt=(), size=None):
-        max_prior = len(self.ngrams)
+    def generate(self, prompt:str='', do_print=True):
+        max_prior = len(self.ngrams) - 1
         INIT = tuple([NULL]*max_prior)
+        prompt = tokenize(prompt)
         prior = INIT + tuple(prompt)
         prior = prior[len(prior)-max_prior:]
-        words = []
-        for _ in range(size):
+
+        words = list(prompt)
+        word = ''
+        while word != NULL:
             for ngram in reversed(self.ngrams):
                 prior_size = ngram.n - 1
-                distrib = ngram[prior[max_prior-prior_size:]]
-                if distrib.total() > random.randint(1, 2):
+                distrib = ngram.getProbDistrib(prior[max_prior-prior_size:])
+                if distrib.total() >= random.randint(1, 2):
                     break
             word = distrib.randomChoice()
-            if word == NULL:
-                prior = INIT
-            else:
-                prior = prior[1:] + (word,)
+            prior = prior[1:] + (word,)
+            if do_print:
+                print(untokenize([word], words), end='')
+                sys.stdout.flush()
             words.append(word)
-            #print((word if word!='\n' else repr(word)).ljust(16), ngram.n, distrib.total())
-        #return words
-        print(*words)
+        return untokenize(words)
 
     def feed(self, string:str):
         for ngram in self.ngrams:
-            ngram.feed(string.split())
+            ngram.feed(tokenize(string))
         return self
 
     def load(self, reverse=False):
@@ -177,4 +175,51 @@ class Model:  #MetaNGram
 
     def save(self):
         for ngram in self.ngrams:
-            ngram.save()        
+            ngram.save(min_occurrences=min(1, ngram.n-3))
+
+    def compress(self):
+        model_dir = f'model/{self.name}/'
+        for filename in tqdm(os.listdir(model_dir), 'compressing '+self.name):
+            filepath = os.path.join(model_dir, filename)
+            if os.path.isfile(filepath) and not filepath.endswith('.gz'):
+                with open(filepath, 'rb') as f_in, gzip.open(filepath + '.gz', 'wb') as f_out:
+                    f_out.write(f_in.read())
+
+    def uncompress(self):
+        model_dir = f'model/{self.name}/'
+        for filename in os.listdir(model_dir):
+            filepath = os.path.join(model_dir, filename)
+            if os.path.isfile(filepath) and filepath.endswith('.gz'):
+                with gzip.open(filepath, 'rb') as f_in, open(filepath[:-3], 'wb') as f_out:
+                    f_out.write(f_in.read())
+
+def tokenize(string:str) -> list[str]:
+    tokens = re.findall(r"\w[\w'\-·]*\w|\w|\d[\d.,]*\d|\.\.\.|[^\w\s]|\n", string)
+    return [t if t!='\n' else NEWLINE for t in tokens]
+
+def untokenize(tokens:list[str], previous_tokens:list[str]=[]):
+    prev = (['\n'] + previous_tokens)[-1]
+    ret = []
+    for token in tokens:
+        if token in (NEWLINE, NULL):
+            token = '\n'
+        if not (
+            '\n' in (prev, token)
+            or __is_pre_punct(prev)
+            or __is_post_punct(token)
+        ):
+            ret.append(' ')
+        ret.append(token)
+        prev = token
+    return ''.join(ret)
+
+
+def __is_word(token):
+    return bool(re.match(r"[\w'\-·]+", token))
+
+def __is_post_punct(token):
+    return token in '.,:;)]}?!' or token == '...'
+
+def __is_pre_punct(token):
+    return token in '({[¿¡'
+
