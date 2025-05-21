@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 
-ALPHA = 0.03
+ALPHA = 0
 
 class Distribution(Counter):
     # Counter allows __add__

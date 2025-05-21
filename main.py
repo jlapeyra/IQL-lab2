@@ -1,7 +1,7 @@
 from ngram import Model
 import glob
 
-def main(n=6, name='europarl-es'):
+def main(n=6, name='wikipedia-ca'):
     print('MODEL:', name)
     print('STRATEGY:', f'{n}-grams')
     print()
@@ -14,9 +14,12 @@ def main(n=6, name='europarl-es'):
     prompt = None
     while (prompt := input('Prompt (optional): ')) != '-q':
         count = 0
+        print()
         while count < 50:
             sentence = model.generate(prompt)
-            #print(sentence)
             count += len(sentence)
+            prompt = ''
+            print()
+        
 
 main()

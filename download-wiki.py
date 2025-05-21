@@ -7,7 +7,9 @@ import re
 import os
 import glob
 
-LANG = 'en'
+LANG = 'ca'
+WIKI_LINKS_FN = f'data/wikipedia/{LANG}/info/wiki-links.txt'
+WIKI_VISITED_LINKS_FN = f'data/wikipedia/{LANG}/info/wiki-links-visited.txt'
 
 WIKIPEDIA_DOMAIN = f'https://{LANG}.wikipedia.org'
 
@@ -111,20 +113,24 @@ def isValidPage(link:str):
     return not ':' in link
 
 def saveLinks(links:list):
-    with open('wiki-links.txt', 'a', encoding='utf-8') as f:
+    with open(WIKI_LINKS_FN, 'a', encoding='utf-8') as f:
         for link in links:
             f.write(link + '\n')
     
 def saveVisitedLink(link:str):
-    with open('wiki-links-visited.txt', 'a', encoding='utf-8') as f:
+    with open(WIKI_VISITED_LINKS_FN, 'a', encoding='utf-8') as f:
         f.write(link + '\n')
     
 def loadLinks():
-    with open('wiki-links.txt', 'r', encoding='utf-8') as f:
+    if not os.path.exists(WIKI_LINKS_FN):
+        return []
+    with open(WIKI_LINKS_FN, 'r', encoding='utf-8') as f:
         return [line.strip('\n') for line in f]
     
 def loadVisitedLinks():
-    with open('wiki-links-visited.txt', 'r', encoding='utf-8') as f:
+    if not os.path.exists(WIKI_VISITED_LINKS_FN):
+        return []
+    with open(WIKI_VISITED_LINKS_FN, 'r', encoding='utf-8') as f:
         return [line.strip('\n') for line in f]
 
 
@@ -137,7 +143,7 @@ if __name__ == '__main__':
         bytes_seq = bytes(int(code, 16) for code in codes)  # Convert hex codes to bytes
         return bytes_seq.decode('utf-8')  # Decode bytes to UTF-8 string
 
-    for fn in glob.glob('data/{LANG}/*.txt'):
+    for fn in glob.glob('data/wikipedia/{LANG}/articles/*.txt'):
         # title = basename(fn)
         # title = re.sub(r'(%[0-9A-Fa-f]{2})+', lambda match: utf8char(match.group()), title)
         # title = title.replace('_', ' ')
@@ -150,17 +156,19 @@ if __name__ == '__main__':
 if __name__ == '__main__':
     import os, glob
 
-    os.makedirs(f'data/wikipedia/{LANG}/', exist_ok=True)
-    SAVED_PAGES = set(map(basename, glob.glob(f'data/{LANG}/*.txt')))
+    os.makedirs(f'data/wikipedia/{LANG}/articles', exist_ok=True)
+    os.makedirs(f'data/wikipedia/{LANG}/info', exist_ok=True)
+    SAVED_PAGES = set(map(basename, glob.glob(f'data/wikipedia/{LANG}/articles/*.txt')))
     VISITED_PAGES = set(loadVisitedLinks())
     STACK_LINKS = loadLinks() or [
-        'Anasayfa'
+        ''
+        #'Anasayfa'
         #r'Viquip%C3%A8dia:Llista_d%27articles_que_totes_les_lleng%C3%BCes_haurien_de_tenir',
         #r'Viquip%C3%A8dia:Els_100_fonamentals'
     ]
 
 
-    num_bytes = sum(os.path.getsize(fn) for fn in glob.glob(f'data/{LANG}/*.txt'))
+    num_bytes = sum(os.path.getsize(fn) for fn in glob.glob(f'data/wikipedia/{LANG}/*.txt'))
     while STACK_LINKS:
         page = STACK_LINKS.pop(0)
         url = WIKIPEDIA_DOMAIN + '/wiki/' + page
@@ -174,9 +182,9 @@ if __name__ == '__main__':
             STACK_LINKS.extend(links)
             if page not in SAVED_PAGES and isValidPage(page):
                 SAVED_PAGES.add(page)
-                with open(f'data/{LANG}/{page}.txt', 'w', encoding='utf-8') as f:
+                with open(f'data/wikipedia/{LANG}/articles/{page}.txt', 'w', encoding='utf-8') as f:
                     f.write(getPlainText(html))
-                num_bytes += os.path.getsize(f'data/{LANG}/{page}.txt')
+                num_bytes += os.path.getsize(f'data/wikipedia/{LANG}/articles/{page}.txt')
             saveVisitedLink(page)
             print(len(SAVED_PAGES), len(VISITED_PAGES), len(STACK_LINKS), num_bytes, page)
 

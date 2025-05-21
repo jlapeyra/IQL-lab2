@@ -54,28 +54,29 @@ class NGram(ConditionalDistribution):
         return f'{self.path}.{num:04}.part'
     
     # Save part
-    def __save(self, flat_dict:dict, filename):
+    def __save(self, flat:dict, filename):
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w', encoding='utf-8') as f:
-            for (prior, posterior), count in sorted(flat_dict.items()):
+            for (prior, posterior), count in sorted(flat.items()):
                 print(*prior, posterior, count, file=f)
 
     # Save by parts
     def save(self, min_occurrences=1):
-        dict = {k:v for k,v in self.items() if v.total() > min_occurrences}
-        flat_dict = flatten(self)
-        num_lines = len(flat_dict)
+        if min_occurrences > 1:
+            filtered = {k:v for k,v in self.items() if v.total() >= min_occurrences}
+        else:
+            filtered = self
+        flat = flatten(filtered)
+        num_lines = len(flat)
         if self.n == 1 or num_lines < 2*LINES_PER_MODEL_FILE:
-            self.__save(flat_dict, self.__filename())
+            self.__save(flat, self.__filename())
         else:
             self.__num_files = num_lines // LINES_PER_MODEL_FILE
             with open(self.__filename_info(), 'w') as f:
                 f.write(str(self.__num_files))
             for i in tqdm(range(self.__num_files), f'Saving {self.n}-gram', leave=False):
-                if hash(('\\0', '\\0'))%self.__num_files == i:
-                    pass
                 self.__save(
-                    flatten({k:v for k,v in self.items() if hash(k)%self.__num_files == i}), 
+                    flatten({k:v for k,v in filtered.items() if hash(k)%self.__num_files == i}), 
                     filename=self.__filename_part(i)
                 )
 
@@ -141,22 +142,32 @@ class Model:  #MetaNGram
         return super().__len__()
 
     def generate(self, prompt:str='', do_print=True):
+        if do_print:
+            print(prompt, end='')
+
         max_prior = len(self.ngrams) - 1
         INIT = tuple([NULL]*max_prior)
         prompt = tokenize(prompt)
-        prior = INIT + tuple(prompt)
-        prior = prior[len(prior)-max_prior:]
+        if not prompt or prompt[0][0].isupper():
+            prior = INIT + tuple(prompt)
+            prior = prior[len(prior)-max_prior:]
+        else:
+            prior = tuple(prompt)
 
         words = list(prompt)
         word = ''
+
         while word != NULL:
             for ngram in reversed(self.ngrams):
                 prior_size = ngram.n - 1
-                distrib = ngram.getProbDistrib(prior[max_prior-prior_size:])
+                if prior_size > len(prior):
+                    continue
+                distrib = ngram.getProbDistrib(prior[-prior_size:] if prior_size else ())
                 if distrib.total() >= random.randint(1, 2):
                     break
             word = distrib.randomChoice()
-            prior = prior[1:] + (word,)
+            prior = prior + (word,)
+            prior = prior[-max_prior:]
             if do_print:
                 print(untokenize([word], words), end='')
                 sys.stdout.flush()
@@ -194,7 +205,7 @@ class Model:  #MetaNGram
                     f_out.write(f_in.read())
 
 def tokenize(string:str) -> list[str]:
-    tokens = re.findall(r"\w[\w'\-·]*\w|\w|\d[\d.,]*\d|\.\.\.|[^\w\s]|\n", string)
+    tokens = re.findall(r"\w[\w’'\-·]*\w|\w|\d[\d\.,]*\d|\.\.\.|[^\w\s]|\n", string)
     return [t if t!='\n' else NEWLINE for t in tokens]
 
 def untokenize(tokens:list[str], previous_tokens:list[str]=[]):

@@ -1,8 +1,11 @@
 from ngram import Model
 from tqdm import tqdm
+import random
 
-def train(name:str, data_files:list[str], split_lines=True, n=6, maxlines=100_000):
+def train(name:str, data_files:list[str], split_lines=True, n=6, maxlines=400_000, maxfiles=2_000):
     model = Model(n, name)
+    random.shuffle(data_files)
+    data_files = data_files[:maxfiles]
     for fn in tqdm(data_files, 'Training '+name) if len(data_files) >= 5 else data_files:
         with open(fn, 'r', encoding='utf-8') as f:
             if not split_lines:
@@ -15,6 +18,5 @@ def train(name:str, data_files:list[str], split_lines=True, n=6, maxlines=100_00
 
 
 if __name__ == '__main__':
-    train('europarl-en', ['data/europarl/europarl.en.txt'])
-    train('europarl-es', ['data/europarl/europarl.es.txt'])
-    train('europarl-ca', ['data/europarl/europarl.ca.txt'])
+    import glob
+    train('wikipedia-ca', glob.glob('data/wikipedia/ca/articles/*'))
